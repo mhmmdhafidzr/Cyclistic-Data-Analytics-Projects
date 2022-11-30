@@ -1,0 +1,303 @@
+---
+title: "Google Data Analytics Capstone Project Cyclistic Bike-share Analysis"
+author: "Muhammad Hafidz Roihan"
+date: "2022-10-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+![](Cyclistic.png){width=30%}
+
+## About the company
+Cyclistic is a bike-share program that features more than 5,800 bicycles and 700 docking stations across Chicago. The bikes can be unlocked from one station and returned to any other station in the system anytime. 
+
+Cyclistic's marketing strategy relied on building general awareness and appealing to broad customer segments. One approach that helped make these things possible was the flexiblity of its pricing plans: single-ride passes, full-day passes, and annual membership. Customers who purchase **single-ride or full-day passes are referred to as casual riders**. Customers who purchase **annual membership are Cyclistic members**.
+
+The director of marketing believes the company's future success depends on maximizing the number of annual membership. Therefore, as a Data Analyst, our job is to find and analyze any pattern or trend in Cyclistic historical bike trip data to understand how casual riders and annual members use Cyclistic bikes differently. From these insights, we can create a new marketing strategy to convert casual riders to annual members.
+
+## Business Task
+**Identify any pattern or trend** in Cyclistic historical bike trip data to understand the **difference between casual riders and annual members** in using Cyclistic bikes so we can create a new marketing strategy to **convert casual riders to annual members**.
+
+## Key Stakeholders:
+
+* **Lily Moreno**: The director of marketing and your manager. Moreno is responsible for the development of campaigns and initiatives to promote the bike-share program. These may include email, social media, and other channels.
+* **Cyclistic marketing analytics team**: A team of data analysts who are responsible for collecting, analyzing, and reporting data that helps guide Cyclistic marketing strategy. You joined this team six months ago and have been busy learning about Cyclistic’s mission and business goals — as well as how you, as a junior data analyst, can help Cyclistic achieve them.
+* **Cyclistic executive team**: The notoriously detail-oriented executive team will decide whether to approve the recommended marketing program.
+
+## Data Preparation
+The dataset I use was acquired from [Divvy Tripdata.](https://divvy-tripdata.s3.amazonaws.com/index.html) The data has been made available for public by Motivate International Inc. under this [license.](https://ride.divvybikes.com/data-license-agreement). For this capstone project, I use data from October 2021 to September 2022 (12 months). I use R for combining and cleaning the dataset that contains a lot of rows (more than 5 million) which Spreadsheet cannot handle.
+
+#### Prepare the environment
+First, we need to load the library.
+
+```{r message=FALSE}
+#Load the library
+library(tidyverse)
+library(lubridate)
+library(summarytools)
+library(data.table)
+library(hms)
+#Set the working directory
+setwd('D:/DatSci & Analyst/Google Data Analytics/CAPSTONE Project')
+```
+
+Then, we have to combine the Cyclistic Bike-Share Datatrip.
+
+```{r}
+#Combine the Cyclistic Bike Dataset from October 2021 to September 2022
+filenames <- list.files(path='D:/DatSci & Analyst/Google Data Analytics/CAPSTONE Project/Dataset', full.names=TRUE)
+
+#Read all csv files from filenames
+cyclist<-rbindlist(lapply(filenames,fread))
+```
+
+Before we clean our data, we need a summary statistics for all variables in the dataframe. We use dfSummary function from summarytools library and set ASCII to false for better printing. A summary table are useful for checking data type, validity, and missing data.
+
+```{r}
+plain.ascii = FALSE
+print(dfSummary(cyclist, graph.magnif = 0.75), method='render')
+```
+
+## Data Cleaning and Data Manipulation
+
+#### Removing NA values
+We can see from dfSummary table that there's 5844 NA value in end_lat and end_lng. We have to validate them first.
+
+```{r}
+sum(is.na(cyclist))
+colSums(is.na(cyclist))
+```
+
+It is true that there's 5844 NA value in end_lat and end_lng. After validating the data, we have to remove the NA value and check the NA value again.
+
+```{r}
+#Remove the NA Value from end_lat and end_lng column
+cyclist <- na.omit(cyclist)
+#Check the NA Value again
+sum(is.na(cyclist))
+```
+
+We have successfully removed the NA value.
+
+#### Removing duplicate
+After we remove the NA value, then we have to remove duplicate data from dataset. First, we need to see dataset's total rows. After that, we remove the duplicate and check the total rows again.
+
+```{r}
+#See total row
+dim(cyclist)
+
+#Remove duplicate
+cyclist %>% distinct()
+
+#See total row after removing duplicate
+dim(cyclist)
+```
+
+We see that there is no row removed, that means there is no duplicate data in the dataset.
+
+#### Creating date variable
+We create the date variable from started at and ended at column. We also create time of day column.
+
+```{r}
+#Create data variable
+cyclist <- cyclist %>% mutate(start_year = year(started_at),
+                              start_month = month(started_at),
+                              start_day = weekdays(started_at),
+                              start_hour = hour(started_at),
+                              start_time_of_day = case_when(start_hour>= 5 & start_hour <=12 ~ "Morning",
+                                                      start_hour>=13 & start_hour <=17 ~ "Afternoon",
+                                                      start_hour>=18 & start_hour <=22 ~ "Evening",
+                                                      start_hour>= 0 & start_hour <=4 | start_hour ==23 ~ "Night"),
+                              end_year = year(ended_at),
+                              end_month = month(ended_at),
+                              end_day = weekdays(ended_at),
+                              end_hour = hour(ended_at),
+                              end_time_of_day = case_when(end_hour>= 5 & end_hour <=12 ~ "Morning",
+                                                      end_hour>=13 & end_hour <=17 ~ "Afternoon",
+                                                      end_hour>=18 & end_hour <=22 ~ "Evening",
+                                                      end_hour>= 0 & end_hour <=4 | end_hour ==23 ~ "Night")
+                              )
+```
+
+#### Creating ride length variable
+We create another variable to show how long a person use Cyclistic bike
+
+```{r}
+#Create ride length
+cyclist <- cyclist %>% mutate(ride_length_mins = difftime(ended_at, started_at, units="mins"))
+```
+
+Check if there are negative time values in the data
+
+```{r}
+#Check the negative time values count
+cyclist %>% filter(ride_length_mins<0) %>% count()
+```
+
+We found 108 negative time values. So we have to subset negative time values data and check them.
+
+```{r}
+negative_time <- cyclist %>% filter(ride_length_mins<0) %>% select(started_at, ended_at)
+head(negative_time, 10)
+```
+
+Negative time values comes when a person end time bike use is less than start time bike use (ended_at<started_at), which suggest that this negative time values data was input incorrectly (the start and end time are swapped), so we have to create a new calculation: difftime(started_at, ended_at)
+
+```{r}
+cyclist <- cyclist %>% mutate(ride_length_mins = ifelse(ended_at>started_at, 
+                                                        difftime(ended_at, started_at, units='mins'), 
+                                                        (difftime(started_at, ended_at, units='mins'))))
+```
+
+Check the count of negative time values again
+
+```{r}
+cyclist %>% filter(ride_length_mins<0) %>% count()
+```
+
+All the negative time values are successfully converted to positive time values
+
+#### Removing the outliers
+An outlier is an observation that lies an abnormal distance from other values in a random sample from a population. In a sense, this definition leaves it up to the analyst (or a consensus process) to decide what will be considered abnormal (ITL NIST). We will use Interquartile Range (IQR) method to remove the outliers. First, we need to create the upper and lower bound.
+
+```{r}
+#Removing outliers in ride_length column  with IQR method
+Q1 <- quantile(cyclist$ride_length, .25)
+Q3 <- quantile(cyclist$ride_length, .75)
+IQR <- IQR(cyclist$ride_length)
+
+upper_bound <- Q3+1.5*IQR
+lower_bound <- Q1-1.5*IQR
+```
+
+Then, we remove the outliers. Any values that fall outside the lower and upper bound are considered outliers.
+
+```{r}
+cyclist_clean <- cyclist %>% subset(ride_length_mins>lower_bound & ride_length_mins<upper_bound)
+```
+
+Now the dataset are clean, we are ready to visualize and analyze the data. The clean cyclistic data will be exported as csv and will get a data visualization on Tableau.
+
+#### Create new dataframe to analyze top 5 start and end station
+First, we need to create a data frame that consist the most used start station coordinate, then we create a data frame that consist the most used start station name for member and casual. The data frame will be exported as csv and we will manually input the coordinate for the top 5 start station names. We found that there's a blank station name from dfSummary table, so **We also need to exclude the blank station name**.
+
+
+```{r message=FALSE}
+#Create coordinate data start station
+start_station_coord<-cyclist_clean %>% 
+  filter(start_station_name != "") %>% 
+  group_by(start_lat, start_lng, start_station_name, member_casual) %>% 
+  summarize(count=n()) %>% 
+  arrange(desc(count))
+
+#Create top 5 start station for member
+start_station_name_member<-cyclist_clean %>% 
+  filter(start_station_name != "") %>% 
+  group_by(start_station_name, member_casual) %>% 
+  summarize(count=n()) %>% 
+  arrange(desc(count)) %>% 
+  filter(member_casual=="member")
+top_5_start_station_name_member<-start_station_name_member %>% head(5)
+
+#Create top 5 start station for casual
+start_station_name_casual<-cyclist_clean %>% 
+  filter(start_station_name != "") %>% 
+  group_by(start_station_name, member_casual) %>% 
+  summarize(count=n()) %>% 
+  arrange(desc(count)) %>% 
+  filter(member_casual=="casual")
+top_5_start_station_name_casual<-start_station_name_casual %>% head(5)
+```
+
+We will do the same method for end station.
+
+```{r message=FALSE}
+#Create coordinate data end station
+end_station_coord<-cyclist_clean %>% 
+  filter(end_station_name != "") %>% 
+  group_by(end_lat, end_lng, end_station_name, member_casual) %>% 
+  summarize(count=n()) %>% 
+  arrange(desc(count))
+
+
+#Create top 5 end station for member
+end_station_name_member<-cyclist_clean %>% 
+  filter(end_station_name != "") %>% 
+  group_by(end_station_name, member_casual) %>% 
+  summarize(count=n()) %>% 
+  arrange(desc(count)) %>% 
+  filter(member_casual=="member")
+top_5_end_station_name_member<-end_station_name_member %>% head(5)
+
+#Create top 5 end station for casual
+end_station_name_casual<-cyclist_clean %>% 
+  filter(end_station_name != "") %>% 
+  group_by(end_station_name, member_casual) %>% 
+  summarize(count=n()) %>% 
+  arrange(desc(count)) %>% 
+  filter(member_casual=="casual")
+top_5_end_station_name_casual<-end_station_name_casual %>% head(5)
+```
+
+## Analyze
+Tableau was used for visualize the data, and now its time to analyze!
+We have to identify any pattern or trends from the data viz and find insights from it. The insights will help us solve the business task.
+
+Let us take a look at dashboard that already been created on Tableau.
+
+```{r, echo=FALSE}
+htmltools::includeHTML("dashboard.html")
+```
+<br>
+We have **main dashboard**, which contains the daily and monthly chart of the number of rides and average ride length between casual and annual members. We also have a pie chart for comparing annual members vs. casual riders and rideable type. The next dashboard is **Maps**, containing the top 5 start and end stations' names, including Google street view. Last, we have **Final Report**, containing the business task, key takeaways, and some business strategy to convert casual riders to annual members.
+
+#### **Key takeaways:**
+
+* Cyclistic has more annual members than casual riders (61.45% vs 38.55%).
+
+* Casual riders, on average, use Cyclistic bikes longer than annual member.
+
+* Casual riders are more active on weekends than annual member, which suggest casual riders are more likely ride for leisure.
+
+* Annual members tend to use Cyclistic bikes on weekdays, which suggest annual riders are more likely ride to commute to work each day.
+
+* Annual members tend to use Cyclistic bikes in morning and afternoon, this indicates that annual members are more likely to use Cyclistic bikes to commute from home to office (morning) and from office to home (afternoon).
+
+* Busiest stations (top 5 stations) are in close proximity, suggesting that casual and annual members usually drive around the same place.
+
+* Casual riders mainly use Cyclistic bikes around June-August.
+
+* Annual members mainly use Cyclistic bikes around May-October.
+
+* Both casual and annual members Cyclistic bike-share usage drops significantly around January and February.
+
+* Docked bikes are rarely used, never even used by annual members.
+
+* Casual riders prefer electric bikes, while annual members use electric bikes and classic bikes almost evenly.
+
+
+
+## Recommendations
+Here are some recommendations that can be implemented to convert casual riders to annual members:
+
+* Make regular membership discount to casual riders, especially from June to August.
+
+* Run promotions during the weekends to reach out more casual riders.
+
+* Provide and promote additional perks for having a Cyclistic membership account, such as holding a membership only events and prizes.
+
+* Run promotions at the top 5 stations that casual riders often use.
+
+* Create some informative promotions and banners to inform casual riders, such as how cost-effective for them to use Cyclistic bikes as an annual member for commute to work on weekdays.
+
+* Increase the bikes' renting price for casual riders during the weekends, especially electic bikes.
+
+<br>
+
+##### The Data Viz can be accessed from [here.](https://public.tableau.com/app/profile/muhammad.hafidz.roihan/viz/GoogleDataAnalyticsCapstoneProjectCyclisticBike-Share/Dashboard1_1#1)
+
+<br>
+-Muhammad Hafidz Roihan, 2022.
